@@ -9,6 +9,8 @@ const settings = require('../js/constants/settings')
 const {passwordManagers, extensionIds} = require('../js/constants/passwordManagers')
 const appStore = require('../js/stores/appStore')
 const extensionState = require('./common/state/extensionState')
+const fs = require('fs')
+const path = require('path')
 
 let generateBraveManifest = () => {
   let baseManifest = {
@@ -173,7 +175,7 @@ module.exports.init = () => {
     const extensionPath = extensions.getIn([extensionId, 'filePath'])
     // If we don't have info on the extension yet, check for an update / install
     if (!extensionPath) {
-      defaultSession.updateClient.install(extensionId)
+      defaultSession.updateClient.checkNow(extensionId)
     } else {
       installExtension(extensionId, extensionPath)
     }
@@ -192,9 +194,24 @@ module.exports.init = () => {
     enableExtension(installInfo.id)
   }
 
-  let installExtension = (extensionId, path, options = {}) => {
+  let installExtension = (extensionId, extensionPath, options = {}) => {
     if (!installedExtensions[extensionId]) {
-      process.emit('load-extension', path, options, extensionInstalled)
+      if (extensionId === config.braveExtensionId) {
+        process.emit('load-extension', extensionPath, options, extensionInstalled)
+        return
+      }
+      // Verify we don't have info about an extension which doesn't exist
+      // on disk anymore.  It will crash if it doesn't exist, so this is
+      // just a safety net.
+      fs.exists(path.join(extensionPath, 'manifest.json'), (exists) => {
+        console.log('paht exists', extensionPath, exists)
+        if (exists) {
+          process.emit('load-extension', extensionPath, options, extensionInstalled)
+        } else {
+          delete installedExtensions[extensionId]
+          defaultSession.updateClient.checkNow(extensionId)
+        }
+      })
     } else {
       enableExtension(extensionId)
     }
